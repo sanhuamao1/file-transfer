@@ -2,29 +2,24 @@ import os
 import uuid
 import sqlite3
 from datetime import datetime
-from flask import Flask, request, jsonify, send_from_directory, render_template, redirect, abort
+from flask import Flask, request, jsonify, render_template, redirect, abort
 from werkzeug.utils import secure_filename
+import oss2
 
 app = Flask(__name__)
 ACCESS_CODE = os.environ.get("ACCESS_CODE", "123456")
-UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/app/files")
 DB_PATH = os.environ.get("DB_PATH", "/app/data/files.db")
 MAX_SIZE = 50 * 1024 * 1024  # 50MB
 
-# OSS config
-OSS_ENABLED = os.environ.get("OSS_ENABLED", "").lower() in ("1", "true", "yes")
 OSS_ACCESS_KEY_ID = os.environ.get("OSS_ACCESS_KEY_ID", "")
 OSS_ACCESS_KEY_SECRET = os.environ.get("OSS_ACCESS_KEY_SECRET", "")
 OSS_BUCKET_NAME = os.environ.get("OSS_BUCKET_NAME", "")
 OSS_ENDPOINT = os.environ.get("OSS_ENDPOINT", "")
 
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+_auth = oss2.Auth(OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET)
+_bucket = oss2.Bucket(_auth, OSS_ENDPOINT, OSS_BUCKET_NAME)
 
-if OSS_ENABLED:
-    import oss2
-    _auth = oss2.Auth(OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET)
-    _bucket = oss2.Bucket(_auth, OSS_ENDPOINT, OSS_BUCKET_NAME)
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 
 def get_db():
@@ -49,7 +44,6 @@ def index():
 
 @app.route("/api/verify", methods=["POST"])
 def verify():
-    """Verify the access code."""
     data = request.get_json()
     if data and data.get("code") == ACCESS_CODE:
         return jsonify({"ok": True})
@@ -57,7 +51,6 @@ def verify():
 
 
 def check_code():
-    """Check X-Access-Code header."""
     return request.headers.get("X-Access-Code") == ACCESS_CODE
 
 
@@ -69,12 +62,7 @@ def list_files():
     rows = conn.execute("SELECT * FROM files ORDER BY upload_time DESC").fetchall()
     conn.close()
     files = [
-        {
-            "id": r["id"],
-            "name": r["filename"],
-            "time": r["upload_time"],
-            "size": r["size"],
-        }
+        {"id": r["id"], "name": r["filename"], "time": r["upload_time"], "size": r["size"]}
         for r in rows
     ]
     return jsonify({"ok": True, "files": files})
@@ -96,12 +84,7 @@ def upload():
     file_id = uuid.uuid4().hex[:12]
     orig_name = secure_filename(f.filename) or "unnamed"
 
-    if OSS_ENABLED:
-        _bucket.put_object(file_id, data)
-    else:
-        save_path = os.path.join(UPLOAD_DIR, file_id)
-        with open(save_path, "wb") as out:
-            out.write(data)
+    _bucket.put_object(file_id, data)
 
     conn = get_db()
     conn.execute(
@@ -126,16 +109,8 @@ def download(file_id):
     if not row:
         return abort(404)
 
-    if OSS_ENABLED:
-        if _bucket.object_exists(file_id):
-            url = _bucket.sign_url("GET", file_id, 300)
-            return redirect(url)
-        # fallback: file uploaded before OSS was enabled
-
-    path = os.path.join(UPLOAD_DIR, file_id)
-    if not os.path.exists(path):
-        return abort(404)
-    return send_from_directory(UPLOAD_DIR, file_id, as_attachment=True, download_name=row["filename"])
+    url = _bucket.sign_url("GET", file_id, 300)
+    return redirect(url)
 
 
 @app.route("/api/file/<file_id>", methods=["DELETE"])
@@ -150,16 +125,7 @@ def delete(file_id):
     conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
     conn.commit()
     conn.close()
-
-    if OSS_ENABLED:
-        try:
-            _bucket.delete_object(file_id)
-        except:
-            pass
-    else:
-        path = os.path.join(UPLOAD_DIR, file_id)
-        if os.path.exists(path):
-            os.remove(path)
+    _bucket.delete_object(file_id)
     return jsonify({"ok": True})
 
 

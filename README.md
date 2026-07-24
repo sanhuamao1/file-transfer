@@ -1,6 +1,6 @@
 # Codelink · 文件中转站
 
-带密码保护的临时文件分享工具，支持本地存储和阿里云 OSS。
+带密码保护的文件分享工具，文件存储于阿里云 OSS。
 
 ## 目录
 
@@ -74,13 +74,10 @@ ACCESS_CODE=123456 python app.py
 
 ## 配置说明
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `ACCESS_CODE` | `123456` | 页面访问密码 |
-| `OSS_ENABLED` | `false` | 设为 `true` 启用阿里云 OSS |
-| `OSS_ACCESS_KEY_ID` | — | OSS AccessKey ID |
-| `OSS_ACCESS_KEY_SECRET` | — | OSS AccessKey Secret |
-| `OSS_BUCKET_NAME` | — | OSS Bucket 名称 |
-| `OSS_ENDPOINT` | — | OSS 地域节点（如 `https://oss-cn-beijing.aliyuncs.com`） |
-
-> `ACCESS_CODE`、`UPLOAD_DIR`、`DB_PATH`、`MAX_SIZE` 也可通过 `docker-compose.yml` 的 `environment` 或 `app.py` 中的环境变量覆盖。
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `ACCESS_CODE` | 是 | 页面访问密码 |
+| `OSS_ACCESS_KEY_ID` | 是 | OSS AccessKey ID |
+| `OSS_ACCESS_KEY_SECRET` | 是 | OSS AccessKey Secret |
+| `OSS_BUCKET_NAME` | 是 | OSS Bucket 名称 |
+| `OSS_ENDPOINT` | 是 | OSS 地域节点（如 `https://oss-cn-beijing.aliyuncs.com`） |

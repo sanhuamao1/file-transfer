@@ -14,7 +14,7 @@ echo "==> 安装依赖"
 pip install -r requirements.txt -q
 
 echo "==> 创建必要目录"
-mkdir -p files data
+mkdir -p data
 
 echo "==> 检查 .env"
 if [ ! -f .env ]; then
