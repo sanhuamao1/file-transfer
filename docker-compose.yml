@@ -7,6 +7,11 @@ services:
       - "5000:5000"
     environment:
       - ACCESS_CODE=${ACCESS_CODE:-123456}
+      - OSS_ENABLED=${OSS_ENABLED:-false}
+      - OSS_ACCESS_KEY_ID=${OSS_ACCESS_KEY_ID:-}
+      - OSS_ACCESS_KEY_SECRET=${OSS_ACCESS_KEY_SECRET:-}
+      - OSS_BUCKET_NAME=${OSS_BUCKET_NAME:-}
+      - OSS_ENDPOINT=${OSS_ENDPOINT:-}
     volumes:
       - ./files:/app/files
       - ./data:/app/data

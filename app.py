@@ -2,7 +2,7 @@ import os
 import uuid
 import sqlite3
 from datetime import datetime
-from flask import Flask, request, jsonify, send_from_directory, render_template, abort
+from flask import Flask, request, jsonify, send_from_directory, render_template, redirect, abort
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -11,8 +11,20 @@ UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/app/files")
 DB_PATH = os.environ.get("DB_PATH", "/app/data/files.db")
 MAX_SIZE = 50 * 1024 * 1024  # 50MB
 
+# OSS config
+OSS_ENABLED = os.environ.get("OSS_ENABLED", "").lower() in ("1", "true", "yes")
+OSS_ACCESS_KEY_ID = os.environ.get("OSS_ACCESS_KEY_ID", "")
+OSS_ACCESS_KEY_SECRET = os.environ.get("OSS_ACCESS_KEY_SECRET", "")
+OSS_BUCKET_NAME = os.environ.get("OSS_BUCKET_NAME", "")
+OSS_ENDPOINT = os.environ.get("OSS_ENDPOINT", "")
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+if OSS_ENABLED:
+    import oss2
+    _auth = oss2.Auth(OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET)
+    _bucket = oss2.Bucket(_auth, OSS_ENDPOINT, OSS_BUCKET_NAME)
 
 
 def get_db():
@@ -83,9 +95,13 @@ def upload():
 
     file_id = uuid.uuid4().hex[:12]
     orig_name = secure_filename(f.filename) or "unnamed"
-    save_path = os.path.join(UPLOAD_DIR, file_id)
-    with open(save_path, "wb") as out:
-        out.write(data)
+
+    if OSS_ENABLED:
+        _bucket.put_object(file_id, data)
+    else:
+        save_path = os.path.join(UPLOAD_DIR, file_id)
+        with open(save_path, "wb") as out:
+            out.write(data)
 
     conn = get_db()
     conn.execute(
@@ -110,6 +126,10 @@ def download(file_id):
     if not row:
         return abort(404)
 
+    if OSS_ENABLED:
+        url = _bucket.sign_url("GET", file_id, 300)
+        return redirect(url)
+
     path = os.path.join(UPLOAD_DIR, file_id)
     if not os.path.exists(path):
         return abort(404)
@@ -128,9 +148,13 @@ def delete(file_id):
     conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
     conn.commit()
     conn.close()
-    path = os.path.join(UPLOAD_DIR, file_id)
-    if os.path.exists(path):
-        os.remove(path)
+
+    if OSS_ENABLED:
+        _bucket.delete_object(file_id)
+    else:
+        path = os.path.join(UPLOAD_DIR, file_id)
+        if os.path.exists(path):
+            os.remove(path)
     return jsonify({"ok": True})
 
 
