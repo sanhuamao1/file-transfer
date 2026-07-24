@@ -276,6 +276,7 @@ async function loadFiles() {
         dropZone.classList.remove('delete-mode');
       });
     });
+  } catch { toast('加载失败', 'error'); }
 }
 
 function escHtml(s) {
