@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Codelink · 文件中转站</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- Lock Screen -->
+<div id="lockScreen" class="screen active">
+  <div class="card lock-card">
+    <div class="logo">
+      <div class="logo-icon">&#9919;</div>
+      <h1>Codelink</h1>
+      <p class="subtitle">文件中转站</p>
+    </div>
+    <p class="desc">输入取件码以访问文件</p>
+    <form id="lockForm" autocomplete="off">
+      <div class="input-group">
+        <input type="password" id="codeInput" placeholder="取件码" maxlength="16" autofocus>
+        <button type="submit" id="unlockBtn">&#10132;</button>
+      </div>
+      <p id="lockError" class="error-msg"></p>
+    </form>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="mainScreen" class="screen">
+
+  <!-- Top Bar -->
+  <header>
+    <div class="header-inner">
+      <div class="logo-row">
+        <div class="logo-icon sm">&#9919;</div>
+        <span class="brand">Codelink</span>
+      </div>
+      <button id="lockBtn" class="btn-icon" title="锁屏">&#128274;</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Upload Card -->
+    <div class="card upload-card" id="dropZone">
+      <div class="upload-icon">&#128228;</div>
+      <p class="upload-text">拖拽文件到此处，或点击选择</p>
+      <p class="upload-hint">最大 50MB</p>
+      <input type="file" id="fileInput" hidden>
+      <div id="uploadProgress" class="progress hidden">
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <span id="progressText">上传中…</span>
+      </div>
+    </div>
+
+    <!-- File List -->
+    <div class="card list-card">
+      <div class="list-header">
+        <h2>文件列表</h2>
+        <span id="fileCount" class="badge">0</span>
+      </div>
+      <div id="fileList">
+        <div class="empty-state">
+          <span class="empty-icon">&#128196;</span>
+          <p>暂无文件</p>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast hidden"></div>
+
+<script>
+const ACCESS_CODE = null; // filled after unlock
+
+// --- Lock ---
+document.getElementById('lockForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const code = document.getElementById('codeInput').value;
+  const btn = document.getElementById('unlockBtn');
+  btn.disabled = true;
+  btn.textContent = '…';
+  document.getElementById('lockError').textContent = '';
+
+  try {
+    const res = await fetch('/api/verify', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({code})
+    });
+    const data = await res.json();
+    if (data.ok) {
+      window.__CODE__ = code;
+      showMain();
+    } else {
+      document.getElementById('lockError').textContent = '取件码错误';
+      btn.disabled = false;
+      btn.textContent = '\u27A4';
+    }
+  } catch {
+    document.getElementById('lockError').textContent = '连接失败';
+    btn.disabled = false;
+    btn.textContent = '\u27A4';
+  }
+});
+
+// Allow enter key to retry
+document.getElementById('codeInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('lockForm').dispatchEvent(new Event('submit'));
+});
+
+function showMain() {
+  document.getElementById('lockScreen').classList.remove('active');
+  document.getElementById('mainScreen').classList.add('active');
+  loadFiles();
+}
+
+// --- Lock button ---
+document.getElementById('lockBtn').addEventListener('click', () => {
+  window.__CODE__ = null;
+  document.getElementById('mainScreen').classList.remove('active');
+  document.getElementById('lockScreen').classList.add('active');
+  document.getElementById('codeInput').value = '';
+  document.getElementById('codeInput').focus();
+});
+
+// --- Toast ---
+function toast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show';
+  el.style.background = type === 'error' ? '#ef4444' : '#10b981';
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// --- Upload ---
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => {
+  dropZone.classList.remove('drag-over');
+});
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+});
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) uploadFile(fileInput.files[0]);
+  fileInput.value = '';
+});
+
+async function uploadFile(file) {
+  const prog = document.getElementById('uploadProgress');
+  const fill = document.getElementById('progressFill');
+  const txt = document.getElementById('progressText');
+  prog.classList.remove('hidden');
+  fill.style.width = '0%';
+  txt.textContent = `${file.name} 上传中…`;
+
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    // use XHR for progress
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload');
+    xhr.setRequestHeader('X-Access-Code', window.__CODE__);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) fill.style.width = (e.loaded / e.total * 100) + '%';
+    };
+    await new Promise((resolve, reject) => {
+      xhr.onload = () => {
+        if (xhr.status === 200) resolve();
+        else reject(new Error(xhr.responseText));
+      };
+      xhr.onerror = reject;
+      xhr.send(form);
+    });
+    prog.classList.add('hidden');
+    toast('上传成功');
+    loadFiles();
+  } catch (err) {
+    prog.classList.add('hidden');
+    let msg = '上传失败';
+    try { const d = JSON.parse(err.message); msg = d.error || msg; } catch {}
+    toast(msg, 'error');
+  }
+}
+
+// --- Load files ---
+async function loadFiles() {
+  const list = document.getElementById('fileList');
+  try {
+    const res = await fetch('/api/files', {
+      headers: {'X-Access-Code': window.__CODE__}
+    });
+    const data = await res.json();
+    if (!data.ok) { toast('加载失败', 'error'); return; }
+    document.getElementById('fileCount').textContent = data.files.length;
+    if (!data.files.length) {
+      list.innerHTML = '<div class="empty-state"><span class="empty-icon">📄</span><p>暂无文件</p></div>';
+      return;
+    }
+    list.innerHTML = data.files.map(f => {
+      const size = f.size > 1024*1024
+        ? (f.size/1024/1024).toFixed(1) + ' MB'
+        : (f.size/1024).toFixed(0) + ' KB';
+      return `<div class="file-row" data-id="${f.id}">
+        <div class="file-info">
+          <span class="file-name">${escHtml(f.name)}</span>
+          <span class="file-meta">${f.time} · ${size}</span>
+        </div>
+        <div class="file-actions">
+          <a href="/api/file/${f.id}?code=${encodeURIComponent(window.__CODE__)}" class="btn-dl" download>下载</a>
+          <button class="btn-del" onclick="deleteFile('${f.id}')">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch { toast('加载失败', 'error'); }
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// --- Delete ---
+async function deleteFile(id) {
+  if (!confirm('确定删除这个文件？')) return;
+  try {
+    const res = await fetch(`/api/file/${id}`, {
+      method: 'DELETE',
+      headers: {'X-Access-Code': window.__CODE__}
+    });
+    const data = await res.json();
+    if (data.ok) { toast('已删除'); loadFiles(); }
+    else toast('删除失败', 'error');
+  } catch { toast('删除失败', 'error'); }
+}
+</script>
+</body>
+</html>
