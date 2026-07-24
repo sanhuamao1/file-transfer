@@ -256,9 +256,13 @@ main {
 }
 
 .file-icon {
-  font-size: 36px;
+  font-size: 32px;
   margin-bottom: 8px;
   line-height: 1;
+  color: var(--text-muted);
+}
+.file-icon .fa-regular {
+  font-size: 32px;
 }
 .file-card .file-name {
   font-size: 12px;

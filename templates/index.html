@@ -201,14 +201,13 @@ async function uploadFile(file) {
 
 function getFileIcon(name) {
   const ext = name.split('.').pop().toLowerCase();
-  if (/^(png|jpg|jpeg|gif|webp|svg|bmp|ico)$/.test(ext)) return '\uD83D\uDDBC\uFE0F';
-  if (/^(mp4|avi|mov|mkv|webm|flv)$/.test(ext)) return '\uD83C\uDFAC';
-  if (/^(mp3|wav|ogg|flac|aac|m4a)$/.test(ext)) return '\uD83C\uDFB5';
-  if (/^(pdf)$/.test(ext)) return '\uD83D\uDCC4';
-  if (/^(doc|docx|xls|xlsx|ppt|pptx)$/.test(ext)) return '\uD83D\uDCD1';
-  if (/^(zip|rar|7z|tar|gz|bz2|xz)$/.test(ext)) return '\uD83D\uDCE6';
-  if (/^(py|js|ts|html|css|json|xml|go|rs|java|c|cpp|h|sh|yaml|yml)$/.test(ext)) return '\uD83D\uDCBB';
-  return '\uD83D\uDCC1';
+  if (/^(png|jpg|jpeg|gif|webp|svg|bmp|ico)$/.test(ext)) return 'fa-file-image';
+  if (/^(mp4|avi|mov|mkv|webm|flv)$/.test(ext)) return 'fa-file-video';
+  if (/^(mp3|wav|ogg|flac|aac|m4a)$/.test(ext)) return 'fa-file-audio';
+  if (/^(pdf)$/.test(ext)) return 'fa-file-pdf';
+  if (/^(doc|docx|xls|xlsx|ppt|pptx)$/.test(ext)) return 'fa-file-lines';
+  if (/^(zip|rar|7z|tar|gz|bz2|xz)$/.test(ext)) return 'fa-file-zipper';
+  return 'fa-file-lines';
 }
 
 // --- Load files ---
@@ -230,7 +229,7 @@ async function loadFiles() {
         ? (f.size/1024/1024).toFixed(1) + ' MB'
         : (f.size/1024).toFixed(0) + ' KB';
       return `<div class="file-card">
-        <div class="file-icon">${getFileIcon(f.name)}</div>
+        <div class="file-icon"><i class="fa-regular ${getFileIcon(f.name)}"></i></div>
         <div class="file-name" title="${escHtml(f.name)}">${escHtml(f.name)}</div>
         <div class="file-meta">${f.time} · ${size}</div>
         <div class="file-card-actions">
