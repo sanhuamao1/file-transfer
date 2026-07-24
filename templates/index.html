@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Codelink · 文件中转站</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
 </head>
@@ -44,10 +45,12 @@
   </header>
 
   <main>
-    <!-- Upload Card -->
-    <div class="card upload-card" id="dropZone">
+    <!-- Upload / Delete Zone -->
+    <div class="card" id="dropZone">
       <div class="upload-icon">&#128228;</div>
+      <div class="delete-icon"><i class="fa-regular fa-trash-can"></i></div>
       <p class="upload-text">拖拽文件到此处，或点击选择</p>
+      <p class="delete-text">松开删除文件</p>
       <p class="upload-hint">最大 50MB</p>
       <input type="file" id="fileInput" hidden>
       <div id="uploadProgress" class="progress hidden">
@@ -138,23 +141,36 @@ function toast(msg, type = 'success') {
   setTimeout(() => el.classList.remove('show'), 2500);
 }
 
-// --- Upload ---
+// --- Upload / Delete Zone ---
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 
-dropZone.addEventListener('click', () => fileInput.click());
+let dragFileId = null;
+
+dropZone.addEventListener('click', () => {
+  if (!dropZone.classList.contains('delete-mode')) fileInput.click();
+});
 
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
-  dropZone.classList.add('drag-over');
+  if (dragFileId) {
+    dropZone.classList.add('delete-mode');
+  } else {
+    dropZone.classList.add('drag-over');
+  }
 });
 dropZone.addEventListener('dragleave', () => {
-  dropZone.classList.remove('drag-over');
+  dropZone.classList.remove('drag-over', 'delete-mode');
 });
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
-  dropZone.classList.remove('drag-over');
-  if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+  dropZone.classList.remove('drag-over', 'delete-mode');
+  if (dragFileId) {
+    deleteFile(dragFileId);
+    dragFileId = null;
+  } else if (e.dataTransfer.files.length) {
+    uploadFile(e.dataTransfer.files[0]);
+  }
 });
 
 fileInput.addEventListener('change', () => {
@@ -228,17 +244,31 @@ async function loadFiles() {
       const size = f.size > 1024*1024
         ? (f.size/1024/1024).toFixed(1) + ' MB'
         : (f.size/1024).toFixed(0) + ' KB';
-      return `<div class="file-card">
+      return `<div class="file-card" draggable="true" data-id="${f.id}">
         <div class="file-icon"><i class="fa-regular ${getFileIcon(f.name)}"></i></div>
         <div class="file-name" title="${escHtml(f.name)}">${escHtml(f.name)}</div>
         <div class="file-meta">${f.time} · ${size}</div>
-        <div class="file-card-actions">
-          <a href="/api/file/${f.id}?code=${encodeURIComponent(window.__CODE__)}" class="btn-dl" download>下载</a>
-          <button class="btn-del" onclick="deleteFile('${f.id}')">删除</button>
-        </div>
+        <div class="file-dl-overlay"><i class="fa-solid fa-download"></i></div>
       </div>`;
     }).join('') + '</div>';
-  } catch { toast('加载失败', 'error'); }
+    // drag & download handlers
+    document.querySelectorAll('.file-card').forEach(card => {
+      const id = card.dataset.id;
+      card.addEventListener('click', () => {
+        const a = document.createElement('a');
+        a.href = '/api/file/' + id + '?code=' + encodeURIComponent(window.__CODE__);
+        a.download = '';
+        a.click();
+      });
+      card.addEventListener('dragstart', (e) => {
+        dragFileId = id;
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      card.addEventListener('dragend', () => {
+        dragFileId = null;
+        dropZone.classList.remove('delete-mode');
+      });
+    });
 }
 
 function escHtml(s) {
@@ -249,7 +279,6 @@ function escHtml(s) {
 
 // --- Delete ---
 async function deleteFile(id) {
-  if (!confirm('确定删除这个文件？')) return;
   try {
     const res = await fetch(`/api/file/${id}`, {
       method: 'DELETE',
