@@ -81,6 +81,19 @@
 <script>
 const ACCESS_CODE = null; // filled after unlock
 
+// Restore session
+(function() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('codelink_session'));
+    if (saved && saved.expires > Date.now()) {
+      window.__CODE__ = saved.code;
+      document.getElementById('lockScreen').classList.remove('active');
+      document.getElementById('mainScreen').classList.add('active');
+      loadFiles();
+    }
+  } catch {}
+})();
+
 // --- Lock ---
 document.getElementById('lockForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -111,6 +124,10 @@ async function doUnlock() {
     const data = await res.json();
     if (data.ok) {
       window.__CODE__ = code;
+      localStorage.setItem('codelink_session', JSON.stringify({
+        code,
+        expires: Date.now() + 10 * 60 * 1000
+      }));
       showMain();
     } else {
       document.getElementById('lockError').textContent = '取件码错误';
@@ -132,6 +149,7 @@ function showMain() {
 
 // --- Lock button ---
 document.getElementById('lockBtn').addEventListener('click', () => {
+  localStorage.removeItem('codelink_session');
   window.__CODE__ = null;
   document.getElementById('mainScreen').classList.remove('active');
   document.getElementById('lockScreen').classList.add('active');
