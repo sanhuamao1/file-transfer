@@ -127,8 +127,10 @@ def download(file_id):
         return abort(404)
 
     if OSS_ENABLED:
-        url = _bucket.sign_url("GET", file_id, 300)
-        return redirect(url)
+        if _bucket.object_exists(file_id):
+            url = _bucket.sign_url("GET", file_id, 300)
+            return redirect(url)
+        # fallback: file uploaded before OSS was enabled
 
     path = os.path.join(UPLOAD_DIR, file_id)
     if not os.path.exists(path):
@@ -150,7 +152,10 @@ def delete(file_id):
     conn.close()
 
     if OSS_ENABLED:
-        _bucket.delete_object(file_id)
+        try:
+            _bucket.delete_object(file_id)
+        except:
+            pass
     else:
         path = os.path.join(UPLOAD_DIR, file_id)
         if os.path.exists(path):
