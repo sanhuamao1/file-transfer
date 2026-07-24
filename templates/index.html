@@ -199,6 +199,18 @@ async function uploadFile(file) {
   }
 }
 
+function getFileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  if (/^(png|jpg|jpeg|gif|webp|svg|bmp|ico)$/.test(ext)) return '\uD83D\uDDBC\uFE0F';
+  if (/^(mp4|avi|mov|mkv|webm|flv)$/.test(ext)) return '\uD83C\uDFAC';
+  if (/^(mp3|wav|ogg|flac|aac|m4a)$/.test(ext)) return '\uD83C\uDFB5';
+  if (/^(pdf)$/.test(ext)) return '\uD83D\uDCC4';
+  if (/^(doc|docx|xls|xlsx|ppt|pptx)$/.test(ext)) return '\uD83D\uDCD1';
+  if (/^(zip|rar|7z|tar|gz|bz2|xz)$/.test(ext)) return '\uD83D\uDCE6';
+  if (/^(py|js|ts|html|css|json|xml|go|rs|java|c|cpp|h|sh|yaml|yml)$/.test(ext)) return '\uD83D\uDCBB';
+  return '\uD83D\uDCC1';
+}
+
 // --- Load files ---
 async function loadFiles() {
   const list = document.getElementById('fileList');
@@ -213,21 +225,20 @@ async function loadFiles() {
       list.innerHTML = '<div class="empty-state"><span class="empty-icon">📄</span><p>暂无文件</p></div>';
       return;
     }
-    list.innerHTML = data.files.map(f => {
+    list.innerHTML = '<div class="file-grid">' + data.files.map(f => {
       const size = f.size > 1024*1024
         ? (f.size/1024/1024).toFixed(1) + ' MB'
         : (f.size/1024).toFixed(0) + ' KB';
-      return `<div class="file-row" data-id="${f.id}">
-        <div class="file-info">
-          <span class="file-name">${escHtml(f.name)}</span>
-          <span class="file-meta">${f.time} · ${size}</span>
-        </div>
-        <div class="file-actions">
+      return `<div class="file-card">
+        <div class="file-icon">${getFileIcon(f.name)}</div>
+        <div class="file-name" title="${escHtml(f.name)}">${escHtml(f.name)}</div>
+        <div class="file-meta">${f.time} · ${size}</div>
+        <div class="file-card-actions">
           <a href="/api/file/${f.id}?code=${encodeURIComponent(window.__CODE__)}" class="btn-dl" download>下载</a>
           <button class="btn-del" onclick="deleteFile('${f.id}')">删除</button>
         </div>
       </div>`;
-    }).join('');
+    }).join('') + '</div>';
   } catch { toast('加载失败', 'error'); }
 }
 
