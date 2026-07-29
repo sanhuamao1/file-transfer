@@ -44,44 +44,119 @@
     </div>
   </header>
 
-  <main>
-    <!-- Upload / Delete Zone -->
-    <div class="card" id="dropZone">
-      <div class="upload-icon">&#128228;</div>
-      <div class="delete-icon"><i class="fa-regular fa-trash-can"></i></div>
-      <p class="upload-text">拖拽文件到此处，或点击选择</p>
-      <p class="delete-text">松开删除文件</p>
-      <p class="upload-hint">最大 50MB</p>
-      <input type="file" id="fileInput" hidden>
-      <div id="uploadProgress" class="progress hidden">
-        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-        <span id="progressText">上传中…</span>
+  <div class="main-layout">
+    <!-- Left Column -->
+    <div class="main-left">
+      <!-- Upload / Delete Zone -->
+      <div class="card" id="dropZone">
+        <div class="upload-icon">&#128228;</div>
+        <div class="delete-icon"><i class="fa-regular fa-trash-can"></i></div>
+        <p class="upload-text">拖拽文件到此处，或点击选择</p>
+        <p class="delete-text">松开删除文件</p>
+        <p class="upload-hint">最大 50MB</p>
+        <input type="file" id="fileInput" hidden>
+        <div id="uploadProgress" class="progress hidden">
+          <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+          <span id="progressText">上传中…</span>
+        </div>
       </div>
-    </div>
 
-    <!-- File List -->
-    <div class="card list-card">
-      <div class="list-header">
-        <h2>文件列表</h2>
-        <span id="fileCount" class="badge">0</span>
-      </div>
-      <div id="fileList">
-        <div class="empty-state">
-          <span class="empty-icon">&#128196;</span>
-          <p>暂无文件</p>
+      <!-- File List -->
+      <div class="card list-card">
+        <div class="list-toolbar">
+          <button id="newFolderBtn" class="btn btn-outline"><i class="fa-regular fa-folder-open"></i> 新建文件夹</button>
+          <span id="folderCounter" class="badge"></span>
+        </div>
+        <div id="breadcrumb" class="breadcrumb"></div>
+        <div id="fileList">
+          <div class="empty-state">
+            <span class="empty-icon">&#128196;</span>
+            <p>暂无文件</p>
+          </div>
         </div>
       </div>
     </div>
-  </main>
+
+    <!-- Right Preview Panel -->
+    <div id="previewPanel" class="preview-panel hidden">
+      <div class="preview-header">
+        <div class="preview-title" id="previewTitle">文件名</div>
+        <button id="previewClose" class="btn-icon preview-close-btn">&times;</button>
+      </div>
+      <div class="preview-body" id="previewBody">
+        <div class="preview-empty">选择文件进行预览</div>
+      </div>
+      <div id="previewFooter" class="preview-footer hidden">
+        <button id="previewEditBtn" class="btn btn-outline"><i class="fa-regular fa-pen-to-square"></i> 编辑</button>
+        <button id="previewSaveBtn" class="btn btn-primary hidden"><i class="fa-regular fa-floppy-disk"></i> 保存</button>
+        <button id="previewCancelBtn" class="btn btn-secondary hidden">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New Folder Popover -->
+<div id="folderPopover" class="popover hidden">
+  <div class="popover-backdrop"></div>
+  <div class="popover-card">
+    <div class="popover-header">
+      <h3>新建文件夹</h3>
+      <button class="popover-close" id="folderPopoverClose">&times;</button>
+    </div>
+    <input type="text" id="folderNameInput" placeholder="文件夹名称" maxlength="64" autofocus>
+    <p id="folderError" class="error-msg"></p>
+    <div class="popover-actions">
+      <button class="btn btn-secondary" id="folderPopoverCancel">取消</button>
+      <button class="btn btn-primary" id="folderPopoverConfirm">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Dialog -->
+<div id="confirmDialog" class="popover hidden">
+  <div class="popover-backdrop"></div>
+  <div class="popover-card">
+    <div class="popover-header">
+      <h3 id="confirmTitle">确认</h3>
+      <button class="popover-close" id="confirmClose">&times;</button>
+    </div>
+    <p id="confirmMessage" class="confirm-message"></p>
+    <div class="popover-actions">
+      <button class="btn btn-secondary" id="confirmCancel">取消</button>
+      <button class="btn btn-danger" id="confirmOk">确认</button>
+    </div>
+  </div>
 </div>
 
 <!-- Toast -->
 <div id="toast" class="toast hidden"></div>
 
 <script>
-const ACCESS_CODE = null; // filled after unlock
+// ──────── State ────────
+let currentFolder = null;
+let breadcrumbs = [];
+let dragFileId = null;
+let pendingConfirm = null;
+let currentPreviewId = null;
+let maxUploadSize = 50 * 1024 * 1024; // default 50MB, updated from /api/config
 
-// Restore session
+const PREVIEW_EXTS = [
+  'png','jpg','jpeg','gif','webp','svg','bmp','ico',
+  'txt','md','json','xml','yaml','yml','ini','cfg','log',
+  'py','js','ts','html','css','sh','bat','ps1','csv','env','gitignore'
+];
+
+function isPreviewable(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  return PREVIEW_EXTS.includes(ext);
+}
+
+function isImageExt(ext) {
+  return ['png','jpg','jpeg','gif','webp','svg','bmp','ico'].includes(ext);
+}
+
+// ──────── Lock ────────
+
 (function() {
   try {
     const saved = JSON.parse(localStorage.getItem('codelink_session'));
@@ -89,32 +164,25 @@ const ACCESS_CODE = null; // filled after unlock
       window.__CODE__ = saved.code;
       document.getElementById('lockScreen').classList.remove('active');
       document.getElementById('mainScreen').classList.add('active');
-      loadFiles();
+      loadCurrentDir();
     }
   } catch {}
 })();
 
-// --- Lock ---
 document.getElementById('lockForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   await doUnlock();
 });
 
-// Allow enter key to retry
 document.getElementById('codeInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    doUnlock();
-  }
+  if (e.key === 'Enter') { e.preventDefault(); doUnlock(); }
 });
 
 async function doUnlock() {
   const code = document.getElementById('codeInput').value;
   const btn = document.getElementById('unlockBtn');
-  btn.disabled = true;
-  btn.textContent = '…';
+  btn.disabled = true; btn.textContent = '…';
   document.getElementById('lockError').textContent = '';
-
   try {
     const res = await fetch('/api/verify', {
       method: 'POST',
@@ -125,29 +193,31 @@ async function doUnlock() {
     if (data.ok) {
       window.__CODE__ = code;
       localStorage.setItem('codelink_session', JSON.stringify({
-        code,
-        expires: Date.now() + 10 * 60 * 1000
+        code, expires: Date.now() + 10 * 60 * 1000
       }));
+      // fetch config
+      try {
+        const cfgRes = await fetch('/api/config');
+        const cfg = await cfgRes.json();
+        if (cfg.max_upload_size) maxUploadSize = cfg.max_upload_size;
+      } catch {}
       showMain();
     } else {
       document.getElementById('lockError').textContent = '取件码错误';
-      btn.disabled = false;
-      btn.textContent = '\u27A4';
+      btn.disabled = false; btn.textContent = '\u27A4';
     }
   } catch {
     document.getElementById('lockError').textContent = '连接失败';
-    btn.disabled = false;
-    btn.textContent = '\u27A4';
+    btn.disabled = false; btn.textContent = '\u27A4';
   }
 }
 
 function showMain() {
   document.getElementById('lockScreen').classList.remove('active');
   document.getElementById('mainScreen').classList.add('active');
-  loadFiles();
+  loadCurrentDir();
 }
 
-// --- Lock button ---
 document.getElementById('lockBtn').addEventListener('click', () => {
   localStorage.removeItem('codelink_session');
   window.__CODE__ = null;
@@ -157,7 +227,8 @@ document.getElementById('lockBtn').addEventListener('click', () => {
   document.getElementById('codeInput').focus();
 });
 
-// --- Toast ---
+// ──────── Toast ────────
+
 function toast(msg, type = 'success') {
   const el = document.getElementById('toast');
   el.textContent = msg;
@@ -166,11 +237,32 @@ function toast(msg, type = 'success') {
   setTimeout(() => el.classList.remove('show'), 2500);
 }
 
-// --- Upload / Delete Zone ---
+// ──────── Confirm Dialog ────────
+
+function confirm(title, message, action) {
+  pendingConfirm = { action, title, message };
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmMessage').textContent = message;
+  document.getElementById('confirmDialog').classList.remove('hidden');
+}
+
+function hideConfirm() { document.getElementById('confirmDialog').classList.add('hidden'); }
+
+document.getElementById('confirmOk').addEventListener('click', () => {
+  if (pendingConfirm) {
+    hideConfirm();
+    const fn = pendingConfirm.action;
+    pendingConfirm = null;
+    fn();
+  }
+});
+document.getElementById('confirmCancel').addEventListener('click', hideConfirm);
+document.getElementById('confirmClose').addEventListener('click', hideConfirm);
+
+// ──────── Upload / Delete Zone ────────
+
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
-
-let dragFileId = null;
 
 dropZone.addEventListener('click', () => {
   if (!dropZone.classList.contains('delete-mode')) fileInput.click();
@@ -180,14 +272,12 @@ dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
   if (!dragFileId) dropZone.classList.add('drag-over');
 });
-dropZone.addEventListener('dragleave', () => {
-  dropZone.classList.remove('drag-over');
-});
+dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('drag-over'); });
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
   dropZone.classList.remove('drag-over', 'delete-mode');
   if (dragFileId) {
-    deleteFile(dragFileId);
+    confirm('删除文件', '确定要删除这个文件吗？', () => deleteFile(dragFileId));
     dragFileId = null;
   } else if (e.dataTransfer.files.length) {
     uploadFile(e.dataTransfer.files[0]);
@@ -200,34 +290,35 @@ fileInput.addEventListener('change', () => {
 });
 
 async function uploadFile(file) {
+  // 上传前校验大小
+  if (file.size > maxUploadSize) {
+    const sizeMB = (maxUploadSize / 1024 / 1024).toFixed(0);
+    toast(`文件超出大小限制（最大 ${sizeMB}MB）`, 'error');
+    return;
+  }
+
   const prog = document.getElementById('uploadProgress');
   const fill = document.getElementById('progressFill');
   const txt = document.getElementById('progressText');
   prog.classList.remove('hidden');
   fill.style.width = '0%';
   txt.textContent = `${file.name} 上传中…`;
-
   try {
     const form = new FormData();
     form.append('file', file);
-    // use XHR for progress
+    if (currentFolder) form.append('folder_id', currentFolder);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload');
     xhr.setRequestHeader('X-Access-Code', window.__CODE__);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) fill.style.width = (e.loaded / e.total * 100) + '%';
-    };
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) fill.style.width = (e.loaded / e.total * 100) + '%'; };
     await new Promise((resolve, reject) => {
-      xhr.onload = () => {
-        if (xhr.status === 200) resolve();
-        else reject(new Error(xhr.responseText));
-      };
+      xhr.onload = () => { if (xhr.status === 200) resolve(); else reject(new Error(xhr.responseText)); };
       xhr.onerror = reject;
       xhr.send(form);
     });
     prog.classList.add('hidden');
     toast('上传成功');
-    loadFiles();
+    loadCurrentDir();
   } catch (err) {
     prog.classList.add('hidden');
     let msg = '上传失败';
@@ -236,9 +327,196 @@ async function uploadFile(file) {
   }
 }
 
+// ──────── Breadcrumb ────────
+
+function renderBreadcrumb() {
+  const el = document.getElementById('breadcrumb');
+  if (!breadcrumbs.length) { el.innerHTML = ''; return; }
+  let html = '<span class="crumb" data-id="">根目录</span>';
+  breadcrumbs.forEach((b, i) => {
+    html += '<span class="crumb-sep">/</span>';
+    if (i === breadcrumbs.length - 1) {
+      html += `<span class="crumb crumb-current">${escHtml(b.name)}</span>`;
+    } else {
+      html += `<span class="crumb" data-id="${b.id}">${escHtml(b.name)}</span>`;
+    }
+  });
+  el.innerHTML = html;
+  el.querySelectorAll('.crumb[data-id]').forEach(el => {
+    el.addEventListener('click', () => navigateTo(el.dataset.id));
+  });
+}
+
+function navigateTo(folderId) {
+  if (folderId === currentFolder) return;
+  if (folderId === null) {
+    currentFolder = null; breadcrumbs = [];
+  } else {
+    const idx = breadcrumbs.findIndex(b => b.id === folderId);
+    if (idx >= 0) { breadcrumbs = breadcrumbs.slice(0, idx + 1); currentFolder = folderId; }
+    else { currentFolder = folderId; }
+  }
+  loadCurrentDir();
+}
+
+// ──────── New Folder Popover ────────
+
+function showFolderPopover() {
+  document.getElementById('folderPopover').classList.remove('hidden');
+  document.getElementById('folderNameInput').value = '';
+  document.getElementById('folderError').textContent = '';
+  setTimeout(() => document.getElementById('folderNameInput').focus(), 100);
+}
+function hideFolderPopover() { document.getElementById('folderPopover').classList.add('hidden'); }
+
+document.getElementById('newFolderBtn').addEventListener('click', showFolderPopover);
+document.getElementById('folderPopoverClose').addEventListener('click', hideFolderPopover);
+document.getElementById('folderPopoverCancel').addEventListener('click', hideFolderPopover);
+
+document.getElementById('folderPopoverConfirm').addEventListener('click', async () => {
+  const name = document.getElementById('folderNameInput').value.trim();
+  if (!name) { document.getElementById('folderError').textContent = '请输入文件夹名称'; return; }
+  try {
+    const res = await fetch('/api/folders', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Access-Code': window.__CODE__},
+      body: JSON.stringify({ name, parent_id: currentFolder })
+    });
+    const data = await res.json();
+    if (data.ok) { hideFolderPopover(); toast('文件夹已创建'); loadCurrentDir(); }
+    else { document.getElementById('folderError').textContent = data.error || '创建失败'; }
+  } catch { document.getElementById('folderError').textContent = '创建失败'; }
+});
+
+document.getElementById('folderNameInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('folderPopoverConfirm').click();
+});
+
+// ──────── Preview Panel ────────
+
+let previewEditMode = false;
+let previewText = '';
+
+function showPreview(fileId, fileName) {
+  currentPreviewId = fileId;
+  previewEditMode = false;
+  document.getElementById('previewTitle').textContent = fileName;
+  document.getElementById('previewPanel').classList.remove('hidden');
+
+  const ext = fileName.split('.').pop().toLowerCase();
+  const code = encodeURIComponent(window.__CODE__);
+
+  if (isImageExt(ext)) {
+    setPreviewContent('img', ext, fileId, code, fileName);
+  } else {
+    setPreviewContent('text', ext, fileId, code, fileName);
+  }
+}
+
+function setPreviewContent(type, ext, fileId, code, fileName) {
+  const body = document.getElementById('previewBody');
+  body.innerHTML = '<div class="preview-loading">加载中…</div>';
+
+  if (type === 'img') {
+    const imgUrl = `/api/file/${fileId}?inline=1&code=${code}`;
+    body.innerHTML = `<div class="preview-img-wrap"><img src="${imgUrl}" alt="${escHtml(fileName)}" class="preview-img"></div>`;
+    setPreviewActions(false);
+  } else {
+    fetch(`/api/file/${fileId}?inline=1&code=${code}`)
+      .then(r => {
+        if (!r.ok) throw new Error('Load failed');
+        return r.text();
+      })
+      .then(text => {
+        previewText = text;
+        body.innerHTML = `<textarea class="preview-textarea" readonly>${escHtml(text)}</textarea>`;
+        setPreviewActions(true);
+      })
+      .catch(() => {
+        body.innerHTML = '<div class="preview-error">预览加载失败</div>';
+        setPreviewActions(false);
+      });
+  }
+}
+
+function setPreviewActions(show) {
+  const footer = document.getElementById('previewFooter');
+  if (!show) {
+    footer.classList.add('hidden');
+    return;
+  }
+  footer.classList.remove('hidden');
+  document.getElementById('previewEditBtn').textContent = '编辑';
+  document.getElementById('previewEditBtn').className = 'btn btn-outline';
+  document.getElementById('previewSaveBtn').classList.add('hidden');
+  document.getElementById('previewCancelBtn').classList.add('hidden');
+}
+
+function enterEditMode() {
+  previewEditMode = true;
+  const body = document.getElementById('previewBody');
+  const ta = document.querySelector('.preview-textarea');
+  const text = ta ? ta.value : previewText;
+  body.innerHTML = `<textarea class="preview-textarea">${escHtml(text)}</textarea>`;
+  document.querySelector('.preview-textarea').focus();
+
+  document.getElementById('previewEditBtn').classList.add('hidden');
+  document.getElementById('previewSaveBtn').classList.remove('hidden');
+  document.getElementById('previewCancelBtn').classList.remove('hidden');
+}
+
+function cancelEdit() {
+  previewEditMode = false;
+  const body = document.getElementById('previewBody');
+  body.innerHTML = `<textarea class="preview-textarea" readonly>${escHtml(previewText)}</textarea>`;
+  document.getElementById('previewEditBtn').classList.remove('hidden');
+  document.getElementById('previewSaveBtn').classList.add('hidden');
+  document.getElementById('previewCancelBtn').classList.add('hidden');
+}
+
+async function saveEdit() {
+  const textarea = document.querySelector('.preview-textarea');
+  if (!textarea) return;
+  const newText = textarea.value;
+  try {
+    const res = await fetch(`/api/file/${currentPreviewId}/content`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json', 'X-Access-Code': window.__CODE__},
+      body: JSON.stringify({ content: newText })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      previewText = newText;
+      toast('保存成功');
+      cancelEdit();
+    } else {
+      toast(data.error || '保存失败', 'error');
+    }
+  } catch {
+    toast('保存失败', 'error');
+  }
+}
+
+document.getElementById('previewEditBtn').addEventListener('click', enterEditMode);
+document.getElementById('previewSaveBtn').addEventListener('click', saveEdit);
+document.getElementById('previewCancelBtn').addEventListener('click', cancelEdit);
+
+function hidePreview() {
+  currentPreviewId = null;
+  previewEditMode = false;
+  document.getElementById('previewPanel').classList.add('hidden');
+  const body = document.getElementById('previewBody');
+  body.innerHTML = '<div class="preview-empty">选择文件进行预览</div>';
+  document.getElementById('previewFooter').classList.add('hidden');
+}
+
+document.getElementById('previewClose').addEventListener('click', hidePreview);
+
+// ──────── File icon helper ────────
+
 function getFileIcon(name) {
   const ext = name.split('.').pop().toLowerCase();
-  if (/^(png|jpg|jpeg|gif|webp|svg|bmp|ico)$/.test(ext)) return 'fa-file-image';
+  if (isImageExt(ext)) return 'fa-file-image';
   if (/^(mp4|avi|mov|mkv|webm|flv)$/.test(ext)) return 'fa-file-video';
   if (/^(mp3|wav|ogg|flac|aac|m4a)$/.test(ext)) return 'fa-file-audio';
   if (/^(pdf)$/.test(ext)) return 'fa-file-pdf';
@@ -247,40 +525,118 @@ function getFileIcon(name) {
   return 'fa-file-lines';
 }
 
-// --- Load files ---
-async function loadFiles() {
+function formatSize(s) {
+  if (s < 1024) return s + ' B';
+  if (s < 1024*1024) return (s/1024).toFixed(s < 10240 ? 1 : 0) + ' KB';
+  return (s/1024/1024).toFixed(1) + ' MB';
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ──────── Load current directory ────────
+
+async function loadCurrentDir() {
   const list = document.getElementById('fileList');
   try {
-    const res = await fetch('/api/files', {
-      headers: {'X-Access-Code': window.__CODE__}
-    });
-    const data = await res.json();
-    if (!data.ok) { toast('加载失败', 'error'); return; }
-    document.getElementById('fileCount').textContent = data.files.length;
-    if (!data.files.length) {
+    const folderParams = currentFolder ? `?parent_id=${encodeURIComponent(currentFolder)}` : '';
+    const fileParams = currentFolder ? `?folder_id=${encodeURIComponent(currentFolder)}` : '';
+
+    const [foldersRes, filesRes] = await Promise.all([
+      fetch(`/api/folders${folderParams}`, { headers: {'X-Access-Code': window.__CODE__} }),
+      fetch(`/api/files${fileParams}`, { headers: {'X-Access-Code': window.__CODE__} })
+    ]);
+
+    const foldersData = await foldersRes.json();
+    const filesData = await filesRes.json();
+    if (!foldersData.ok || !filesData.ok) { toast('加载失败', 'error'); return; }
+
+    const folders = foldersData.folders || [];
+    const files = filesData.files || [];
+
+    document.getElementById('folderCounter').textContent = (folders.length + files.length) + ' 项';
+
+    if (!folders.length && !files.length) {
       list.innerHTML = '<div class="empty-state"><span class="empty-icon">📄</span><p>暂无文件</p></div>';
       return;
     }
-    list.innerHTML = '<div class="file-grid">' + data.files.map(f => {
-      const size = f.size > 1024*1024
-        ? (f.size/1024/1024).toFixed(1) + ' MB'
-        : (f.size/1024).toFixed(0) + ' KB';
-      return `<div class="file-card" draggable="true" data-id="${f.id}">
-        <div class="file-icon"><i class="fa-regular ${getFileIcon(f.name)}"></i></div>
-        <div class="file-name" title="${escHtml(f.name)}">${escHtml(f.name)}</div>
-        <div class="file-meta">${f.time} · ${size}</div>
-        <div class="file-dl-overlay"><i class="fa-solid fa-download"></i></div>
+
+    let html = '<div class="file-grid">';
+
+    // folder cards
+    folders.forEach(f => {
+      html += `<div class="folder-card" draggable="false" data-id="${f.id}" title="${f.created_at}">
+        <div class="folder-icon"><i class="fa-regular fa-folder"></i></div>
+        <div class="file-name">${escHtml(f.name)}</div>
       </div>`;
-    }).join('') + '</div>';
-    // drag & download handlers
+    });
+
+    // file cards with dual overlay
+    files.forEach(f => {
+      const previewable = isPreviewable(f.name);
+      html += `<div class="file-card" draggable="true" data-id="${f.id}" data-folder="${f.folder_id || ''}" title="${f.time} (${formatSize(f.size)})">
+        <div class="file-icon"><i class="fa-regular ${getFileIcon(f.name)}"></i></div>
+        <div class="file-name">${escHtml(f.name)}</div>
+        <div class="file-overlay-actions">`;
+      if (previewable) {
+        html += `<button class="overlay-btn preview-btn"><i class="fa-regular fa-eye"></i></button>`;
+      }
+      html += `<button class="overlay-btn download-btn"><i class="fa-solid fa-download"></i></button>`;
+      html += `</div>
+      </div>`;
+    });
+
+    html += '</div>';
+    list.innerHTML = html;
+
+    // ── folder click → navigate ──
+    document.querySelectorAll('.folder-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const id = card.dataset.id;
+        const name = card.querySelector('.file-name').textContent;
+        breadcrumbs.push({ id, name });
+        currentFolder = id;
+        loadCurrentDir();
+      });
+    });
+
+    // ── file card events ──
     document.querySelectorAll('.file-card').forEach(card => {
       const id = card.dataset.id;
-      card.addEventListener('click', () => {
+      const nameEl = card.querySelector('.file-name');
+
+      // preview button
+      const previewBtn = card.querySelector('.preview-btn');
+      if (previewBtn) {
+        previewBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showPreview(id, nameEl.textContent);
+        });
+      }
+
+      // download button
+      const downloadBtn = card.querySelector('.download-btn');
+      downloadBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const a = document.createElement('a');
         a.href = '/api/file/' + id + '?code=' + encodeURIComponent(window.__CODE__);
         a.download = '';
         a.click();
       });
+
+      // click on card background → download
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.file-overlay-actions') || card.classList.contains('drag-over')) return;
+        const a = document.createElement('a');
+        a.href = '/api/file/' + id + '?code=' + encodeURIComponent(window.__CODE__);
+        a.download = '';
+        a.click();
+      });
+
+      // drag
       card.addEventListener('dragstart', (e) => {
         dragFileId = id;
         e.dataTransfer.effectAllowed = 'move';
@@ -291,16 +647,47 @@ async function loadFiles() {
         dropZone.classList.remove('delete-mode');
       });
     });
+
+    renderBreadcrumb();
+
+    // ── folder drop targets ──
+    document.querySelectorAll('.folder-card').forEach(folderEl => {
+      folderEl.addEventListener('dragover', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (dragFileId) folderEl.classList.add('drag-over');
+      });
+      folderEl.addEventListener('dragleave', () => { folderEl.classList.remove('drag-over'); });
+      folderEl.addEventListener('drop', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        folderEl.classList.remove('drag-over');
+        if (dragFileId) {
+          moveFileToFolder(dragFileId, folderEl.dataset.id);
+          dragFileId = null;
+          dropZone.classList.remove('delete-mode');
+        }
+      });
+    });
+
   } catch { toast('加载失败', 'error'); }
 }
 
-function escHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
+// ──────── Move file to folder ────────
+
+async function moveFileToFolder(fileId, folderId) {
+  try {
+    const res = await fetch(`/api/file/${fileId}/move`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json', 'X-Access-Code': window.__CODE__},
+      body: JSON.stringify({ folder_id: folderId })
+    });
+    const data = await res.json();
+    if (data.ok) { toast('已移动到文件夹'); loadCurrentDir(); }
+    else { toast('移动失败', 'error'); }
+  } catch { toast('移动失败', 'error'); }
 }
 
-// --- Delete ---
+// ──────── Delete file ────────
+
 async function deleteFile(id) {
   try {
     const res = await fetch(`/api/file/${id}`, {
@@ -308,8 +695,8 @@ async function deleteFile(id) {
       headers: {'X-Access-Code': window.__CODE__}
     });
     const data = await res.json();
-    if (data.ok) { toast('已删除'); loadFiles(); }
-    else toast('删除失败', 'error');
+    if (data.ok) { toast('已删除'); loadCurrentDir(); if (currentPreviewId === id) hidePreview(); }
+    else { toast('删除失败', 'error'); }
   } catch { toast('删除失败', 'error'); }
 }
 </script>
