@@ -27,5 +27,8 @@ class OSSStorage(StorageBackend):
         self._bucket.delete_object(file_id)
 
     def get_data(self, file_id: str) -> bytes | None:
-        # OSS 模式不需要直接读取数据，URL 方式更优
-        return None
+        try:
+            obj = self._bucket.get_object(file_id)
+            return obj.read()
+        except:
+            return None
